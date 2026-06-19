@@ -143,6 +143,49 @@ class VerificationServiceTests(unittest.TestCase):
             service.verify(challenge.challenge_id)
         self.assertEqual(raised.exception.scope, "user_cooldown")
 
+    def test_label_dashes_are_folded_to_ascii(self) -> None:
+        clock = FakeClock()
+        client = FakeClient()
+        service = make_service(client, clock)
+        # em dash, en dash, and horizontal bar should all become ASCII hyphen
+        challenge = service.start_verification(
+            USER_ID, context_label="My—App–Name―"
+        )
+        self.assertNotIn("—", challenge.text)
+        self.assertNotIn("–", challenge.text)
+        self.assertNotIn("―", challenge.text)
+        self.assertIn("My-App-Name", challenge.text)
+        # VRChat preserves ASCII hyphen, so the round-trip should match
+        client.profile["bio"] = challenge.text
+        self.assertTrue(service.verify(challenge.challenge_id).success)
+
+    def test_label_whitespace_is_collapsed(self) -> None:
+        clock = FakeClock()
+        client = FakeClient()
+        service = make_service(client, clock)
+        # regular spaces, ideographic space, and tab should all collapse to one
+        challenge = service.start_verification(
+            USER_ID, context_label="My	 App　Name"
+        )
+        self.assertIn("My App Name", challenge.text)
+        client.profile["bio"] = challenge.text
+        self.assertTrue(service.verify(challenge.challenge_id).success)
+
+    def test_full_challenge_text_matches_after_vrcchat_transforms(self) -> None:
+        """End-to-end: user pastes full challenge text, VRChat fullwidth-converts
+        ASCII brackets and letters, but the full text must still match."""
+        clock = FakeClock()
+        client = FakeClient()
+        service = make_service(client, clock)
+        challenge = service.start_verification(USER_ID, context_label="My App")
+        # Simulate VRChat converting ASCII alphanumerics to fullwidth
+        bio_text = challenge.text
+        fullwidth_bio = "".join(
+            chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in bio_text
+        )
+        client.profile["bio"] = fullwidth_bio
+        self.assertTrue(service.verify(challenge.challenge_id).success)
+
 
 if __name__ == "__main__":
     unittest.main()

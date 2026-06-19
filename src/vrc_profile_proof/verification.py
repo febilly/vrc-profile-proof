@@ -37,6 +37,23 @@ LEFT_BRACKET = "【"
 RIGHT_BRACKET = "】"
 LABEL_TOKEN_SEPARATOR = " - "
 
+# Dash variants that VRChat silently strips from bios. Folding them to ASCII
+# hyphen at generation time prevents them from disappearing after a round-trip.
+_DASH_VARIANTS = "‐‑‒–—―−﹘﹣－"
+_DASH_TRANSLATION = str.maketrans({char: "-" for char in _DASH_VARIANTS})
+
+
+def _normalize_for_matching(text: str) -> str:
+    """Normalize text so bio matching survives VRChat character transforms.
+
+    Applies NFKC (full-width to ASCII), folds dash variants to ASCII hyphen,
+    and collapses whitespace runs to a single space.
+    """
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = normalized.translate(_DASH_TRANSLATION)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized
+
 
 @dataclass
 class _ChallengeRecord:
@@ -130,14 +147,14 @@ class VerificationService:
             self.rate_limiter.check_global()
             profile = self.client.get_user(user_id)
             bio = str(profile.get("bio") or "")
-            success = bio_contains_token(bio, record.token)
+            success = bio_contains_token(bio, record.challenge.text)
             result = VerificationResult(
                 success=success,
                 user_id=user_id,
                 display_name=str(profile.get("displayName") or ""),
                 trust_rank=extract_trust_rank(profile),
                 profile=profile,
-                reason="" if success else "challenge token was not found in the user's bio",
+                reason="" if success else "the full challenge text was not found in the user's bio",
             )
             if success:
                 self.rate_limiter.record_success(user_id)
@@ -230,8 +247,7 @@ def normalize_name_query(value: str) -> str:
 
 
 def normalize_context_label(value: str) -> str:
-    label = unicodedata.normalize("NFKC", value or "").strip()
-    label = re.sub(r"\s+", " ", label)
+    label = _normalize_for_matching(value or "").strip()
     label = label.replace(LEFT_BRACKET, "").replace(RIGHT_BRACKET, "")
     return label[:40] or DEFAULT_CONTEXT_LABEL
 
@@ -241,8 +257,8 @@ def format_challenge_text(label: str, token: str) -> str:
 
 
 def bio_contains_token(bio: str, token: str) -> bool:
-    normalized_bio = unicodedata.normalize("NFKC", bio)
-    normalized_token = unicodedata.normalize("NFKC", token)
+    normalized_bio = _normalize_for_matching(bio)
+    normalized_token = _normalize_for_matching(token)
     return normalized_token in normalized_bio
 
 
