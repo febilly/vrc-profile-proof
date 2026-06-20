@@ -249,7 +249,7 @@ def normalize_name_query(value: str) -> str:
 def normalize_context_label(value: str) -> str:
     label = _normalize_for_matching(value or "").strip()
     label = label.replace(LEFT_BRACKET, "").replace(RIGHT_BRACKET, "")
-    return label[:40] or DEFAULT_CONTEXT_LABEL
+    return label or DEFAULT_CONTEXT_LABEL
 
 
 def format_challenge_text(label: str, token: str) -> str:
